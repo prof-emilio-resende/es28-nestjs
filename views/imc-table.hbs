@@ -1,0 +1,12 @@
+<h1>Tabela de IMC</h1>
+<table>
+    <tr>
+        <th>Início</th><th>Descrição</th>
+    </tr>
+    {{#each data}}
+    <tr>
+        <td>{{@key}}</td>
+        <td>{{this}}</td>
+    </tr>
+    {{/each}}
+</table>

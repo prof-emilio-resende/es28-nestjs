@@ -29,4 +29,15 @@ export class ImcCalculatorController {
       imcDescription: 'Obesidade',
     };
   }
+
+  @Get('table')
+  getImcTable() {
+    return this.imcSvc.getTable();
+  }
+
+  @Get('table/html')
+  @Render('imc-table')
+  getImcTableHtml() {
+    return { data: this.imcSvc.getTable() };
+  }
 }

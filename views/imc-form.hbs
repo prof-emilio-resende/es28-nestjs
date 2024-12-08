@@ -1,3 +1,4 @@
+{{#imcTable data}}{{/imcTable}}
 <form action="" method="post">
     <label>altura</label>
     <input id="altura" name="altura" />
@@ -6,4 +7,6 @@
     <button type="submit">Calcular</button>
 </form>
 <hr />
-{{imc}} : {{imcDescription}}
+{{#if imc}}
+    {{imc}} : {{imcDescription}}
+{{/if}}

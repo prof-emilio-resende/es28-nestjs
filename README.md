@@ -114,4 +114,91 @@ calculateImcForm() {
 {{#if imc}}
     {{imc}} : {{imcDescription}}
 {{/if}}
-````
+```
+
+# 4. Middlewares
+Middlewares vão trabalhar no início e fim da requisição ... criar um middleware permite que ações sejam executadas antes e/ou depois do processamento da requisição.
+> Múltiplos middlewares podem ser criados e associados às mesmas requisições, sua ordem será definida pela ordem de registro
+
+```typescript
+// common/middlewares/logger.middleware.ts
+import { Injectable, NestMiddleware } from '@nestjs/common';
+import { Request, Response, NextFunction } from 'express';
+
+@Injectable()
+export class LoggerMiddleware implements NestMiddleware {
+  use(req: Request, res: Response, next: NextFunction) {
+    console.log('Before responding request...');
+    console.log(req.query);
+    next();
+    console.log('After responding request...');
+  }
+}
+```
+
+Assim como outros recursos, o middleware precisa ser adicionado à configuração de seu módulo
+
+```typescript
+// app.module.ts
+import {
+  MiddlewareConsumer,
+  Module,
+  NestModule,
+  RequestMethod,
+} from '@nestjs/common';
+// ...
+import { LoggerMiddleware } from './common/middlewares/logger.middleware';
+import { ImcCalculatorController } from './imc/imc.calculator.controller';
+// ...
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    consumer.apply(LoggerMiddleware).forRoutes(ImcCalculatorController);
+  }
+}
+```
+
+Podemos utilizar múltiplos middlewares em associação
+
+```typescript
+// common/middlewares/auth.middleware.ts
+import { Injectable, NestMiddleware } from '@nestjs/common';
+import { Request, Response, NextFunction } from 'express';
+
+@Injectable()
+export class AuthMiddleware implements NestMiddleware {
+  use(req: Request, res: Response, next: NextFunction) {
+    console.log('Validate authn...');
+    if (req.headers['x-api-key'] === 'supersafe') {
+      next();
+      console.log('Authn authenticated...');
+    } else {
+      res.sendStatus(401);
+    }
+  }
+}
+```
+
+```typescript
+// app.module.ts
+// ...
+import { AuthMiddleware } from './common/middlewares/auth.middleware';
+// ...
+configure(consumer: MiddlewareConsumer) {
+  consumer
+    .apply(AuthMiddleware)
+    .forRoutes({ path: '*', method: RequestMethod.ALL });
+    consumer.apply(LoggerMiddleware).forRoutes(ImcCalculatorController);
+}
+// ...
+```
+
+> podemos testar usando curl com e sem o cabeçalho esperado
+
+```bash
+#401
+curl --location 'http://localhost:3000/imc/hello'
+
+#200
+curl --location 'http://localhost:3000/imc/hello' \
+--header 'x-api-key: supersafe' 
+```

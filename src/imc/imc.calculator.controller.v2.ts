@@ -1,16 +1,23 @@
-import { Controller, Get, Param, Post, Render } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Param,
+  Post,
+  Render,
+  VERSION_NEUTRAL,
+} from '@nestjs/common';
 import { ImcCalculatorService } from './imc.calculator.service';
 
 @Controller({
   path: 'imc',
-  version: '1',
+  version: ['2', VERSION_NEUTRAL],
 })
-export class ImcCalculatorController {
+export class ImcCalculatorControllerV2 {
   constructor(private readonly imcSvc: ImcCalculatorService) {}
 
   @Get('hello')
   getHello(): object {
-    return [{ message: 'Olá mundo!' }];
+    return [{ message: 'Olá mundo v2!' }];
   }
 
   @Get(':nr/translate')
@@ -32,7 +39,7 @@ export class ImcCalculatorController {
     return {
       data: this.imcSvc.getTable(),
       imc: 30,
-      imcDescription: 'Obesidade',
+      imcDescription: 'Obesidade v2',
     };
   }
 

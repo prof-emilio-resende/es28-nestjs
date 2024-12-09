@@ -403,3 +403,176 @@ configure(consumer: MiddlewareConsumer) {
 }
 // ...
 ```
+
+# 6. Autorização com Guards
+
+Guards possuem a responsabilidade de permitir ou não que a requisição seja processada.
+Em uma redução simples, a única responsabilidade de um Guard é implementar o método onActivate que vai determinar se o fluxo deve ou não continuar
+
+> Guards vão ser executados depois dos middlewares mas antes de qualquer interceptador (filtro) ou pipe
+
+## Exemplo de Authentication Guard
+
+```typescript
+// auth.guard.ts
+import { Injectable, CanActivate, ExecutionContext } from '@nestjs/common';
+import { Observable } from 'rxjs';
+
+@Injectable()
+export class AuthGuard implements CanActivate {
+  canActivate(
+    context: ExecutionContext,
+  ): boolean | Promise<boolean> | Observable<boolean> {
+    const request = context.switchToHttp().getRequest();
+    return validateRequest(request);
+  }
+}
+```
+
+## 6.1 Implementando autorização com Guard
+
+Para implementar autorização, primeiro vamos fazer a configuração base. Teremos
+- enum Role para definir as roles disponíveis (RBAC)
+- ROLES_KEY será a constante de acesso às roles
+- decorador Roles, uma extensão usando o NestJS para facilitar reflexão
+
+```typescript
+// auth/authz.domain.ts
+import { SetMetadata } from '@nestjs/common';
+
+export enum Role {
+  Reader = 'reader',
+  Writer = 'writer',
+}
+
+export const ROLES_KEY = 'roles';
+export const Roles = (...roles: Role[]) => SetMetadata(ROLES_KEY, roles);
+```
+
+Serviço de autenticação que declara chaves vs roles (hardcoded para o exemplo)
+```typescript
+import { Injectable } from '@nestjs/common';
+import { Role } from './authz.domain';
+
+@Injectable()
+export class AuthzService {
+  private keyRoles = {
+    supersafe: [Role.Reader, Role.Writer],
+    supersafev2: [Role.Reader, Role.Writer],
+    supersafevn: [Role.Reader],
+  };
+
+  getRolesFromKey(key: string): Role[] {
+    return this.keyRoles[key];
+  }
+}
+```
+
+Declaração simples do módulo de autorização
+
+```typescript
+import { Module } from '@nestjs/common';
+import { AuthzService } from './authz.service';
+
+@Module({
+  providers: [AuthzService],
+  exports: [AuthzService],
+})
+export class AuthzModule {}
+```
+
+## Implementando o Guard
+A funcionalidade desejada, basicamente consiste em encontrar a chave de API, encontrar as roles associadas e, por fim, 
+verificar se o endpoint em execução solicita Roles que não existam para esta chave. 
+Do contrário, o processamento segue normalmente.
+
+```typescript
+import {
+  Injectable,
+  CanActivate,
+  ExecutionContext,
+  ForbiddenException,
+} from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
+import { Role, ROLES_KEY } from './authz.domain';
+import { AuthzService } from './authz.service';
+
+@Injectable()
+export class RolesGuard implements CanActivate {
+  constructor(
+    private reflector: Reflector,
+    private authzService: AuthzService,
+  ) {}
+
+  canActivate(context: ExecutionContext): boolean {
+    const requiredRoles = this.reflector.getAllAndOverride<Role[]>(ROLES_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+
+    if (!requiredRoles) return true;
+
+    const req = context.switchToHttp().getRequest();
+    const apiKey = req.headers['x-api-key'];
+    const actualRoles = this.authzService.getRolesFromKey(apiKey);
+
+    const hasAccess = requiredRoles.some((role) => actualRoles.includes(role));
+
+    if (hasAccess) return true;
+
+    throw new ForbiddenException();
+  }
+}
+```
+
+## Utilizando o Guard
+Uma vez implementado, agora podemos utilizar nosso Guard para proteger recursos (endpoints) de nosso app
+
+### Primeiro precisamos importar o módulo de autorização
+```typescript
+// imc/imc.calculator.module.ts
+// ...
+import { AuthzModule } from '../auth/authz.module';
+// ...
+imports: [AuthzModule]
+// ...
+```
+
+> Para proteger o controller, basta usar o Guard e o decorador que criamos
+
+```typescript
+// imc/imc.calculator.controller.v2.ts
+import {
+  Controller,
+  Get,
+  Param,
+  Post,
+  Render,
+  UseGuards,
+  VERSION_NEUTRAL,
+} from '@nestjs/common';
+// ...
+import { RolesGuard } from '../auth/authz.roles.guard';
+import { Role, Roles } from '../auth/authz.domain';
+// ...
+@UseGuards(RolesGuard)
+@Controller ///...
+// ...
+@Roles(Role.Writer)
+@Get('hello')
+// ...
+```
+
+Para testar, basta fazer a chamada usando o acesso via V2 e via NEUTRAL.
+
+```bash
+#200
+curl --location 'http://localhost:3000/v2/imc/hello' \
+--header 'x-api-key: supersafev2'
+```
+
+```bash
+#403
+curl --location 'http://localhost:3000/imc/hello' \
+--header 'x-api-key: supersafevn'
+```

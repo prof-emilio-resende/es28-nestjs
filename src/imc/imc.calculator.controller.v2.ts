@@ -4,10 +4,14 @@ import {
   Param,
   Post,
   Render,
+  UseGuards,
   VERSION_NEUTRAL,
 } from '@nestjs/common';
 import { ImcCalculatorService } from './imc.calculator.service';
+import { RolesGuard } from '../auth/authz.roles.guard';
+import { Role, Roles } from '../auth/authz.domain';
 
+@UseGuards(RolesGuard)
 @Controller({
   path: 'imc',
   version: ['2', VERSION_NEUTRAL],
@@ -15,6 +19,7 @@ import { ImcCalculatorService } from './imc.calculator.service';
 export class ImcCalculatorControllerV2 {
   constructor(private readonly imcSvc: ImcCalculatorService) {}
 
+  @Roles(Role.Writer)
   @Get('hello')
   getHello(): object {
     return [{ message: 'Olá mundo v2!' }];

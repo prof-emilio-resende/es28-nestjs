@@ -18,15 +18,31 @@ export class ImcCalculatorController {
   @Get('calculadora')
   @Render('imc-form.hbs')
   renderImcForm() {
-    return {};
+    return {
+      data: this.imcSvc.getTable(),
+    };
   }
 
   @Post('calculadora')
   @Render('imc-form.hbs')
   calculateImcForm() {
     return {
+      data: this.imcSvc.getTable(),
       imc: 30,
       imcDescription: 'Obesidade',
+    };
+  }
+
+  @Get('table')
+  imcTable() {
+    return this.imcSvc.getTable();
+  }
+
+  @Get('table/html')
+  @Render('imc-table.hbs')
+  imcTableHtml() {
+    return {
+      data: this.imcSvc.getTable(),
     };
   }
 }

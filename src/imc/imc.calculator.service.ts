@@ -13,4 +13,13 @@ export class ImcCalculatorService {
     if (imc < 30) return 'Sobrepeso';
     else return 'Obesidade';
   }
+
+  getTable() {
+    return {
+      Magreza: 0.0,
+      Normal: 18.5,
+      Sobrepeso: 24.9,
+      Obesidade: 30.0,
+    };
+  }
 }

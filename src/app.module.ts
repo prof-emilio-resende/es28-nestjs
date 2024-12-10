@@ -12,9 +12,10 @@ import { ImcCalculatorController } from './imc/imc.calculator.controller';
 import { AuthMiddleware } from './common/middlewares/auth.middleware';
 import { AuthMiddlewareV2 } from './common/middlewares/auth.middleware.v2';
 import { AuthMiddlewareVNeutral } from './common/middlewares/auth.middleware.vneutral';
+import { AuthnModule } from './authn/authn.module';
 
 @Module({
-  imports: [ImcCalculatorModule],
+  imports: [ImcCalculatorModule, AuthnModule],
   controllers: [AppController],
   providers: [AppService],
 })

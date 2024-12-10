@@ -576,3 +576,252 @@ curl --location 'http://localhost:3000/v2/imc/hello' \
 curl --location 'http://localhost:3000/imc/hello' \
 --header 'x-api-key: supersafevn'
 ```
+
+# 7. Implementando autenticação
+
+Como última funcionalidade, vamos adicionar o processo de autenticação. Para isso, vamos começar criando um novo módulo, controller e service.
+
+```bash
+nest g module authn
+nest g controller authn
+nest g service authn
+```
+
+Vamos utilizar a biblioteca complementar jwt do próprio nest para gerar novos tokens:
+```bash
+npm install --save @nestjs/jwt
+```
+
+E vamos criar o serviço responsável por gerenciar os usuários.
+É claro que esta é uma simplificação do processo, sem o devido cuidado com as credenciais de usuários.
+```bash
+nest g service authn/users
+```
+```typescript
+// authn/users/users.service.ts
+import { Injectable } from '@nestjs/common';
+import { Role } from '../../auth/authz.domain';
+
+export type User = any;
+
+@Injectable()
+export class UsersService {
+  private readonly users = [
+    {
+      userId: 1,
+      username: 'emilio',
+      password: '123@mudar',
+      roles: [Role.Writer, Role.Reader],
+    },
+    {
+      userId: 2,
+      username: 'resende',
+      password: '234@mudar',
+      roles: [Role.Reader],
+    },
+  ];
+
+  async findOne(username: string): Promise<User | undefined> {
+    return this.users.find((user) => user.username === username);
+  }
+}
+
+```
+
+Agora, vamos desenvolver o serviço de autenticação que usa o gerenciador de usuários.
+
+```typescript
+// authn/authn.service.ts
+import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { UsersService } from './users/users.service';
+import { JwtService } from '@nestjs/jwt';
+
+@Injectable()
+export class AuthnService {
+  constructor(
+    private usersService: UsersService,
+    private jwtService: JwtService,
+  ) {}
+
+  async signIn(username: string, pass: string): Promise<any> {
+    const user = await this.usersService.findOne(username);
+    if (user?.password !== pass) {
+      throw new UnauthorizedException();
+    }
+
+    const payload = {
+      sub: user.userId,
+      username: user.username,
+      roles: user.roles,
+    };
+    const access_token = await this.jwtService.signAsync(payload);
+
+    return {
+      access_token,
+    };
+  }
+}
+
+```
+
+Uma vez desenvolvidos os serviços de autenticação, vamos expor um endpoint para utilizá-lo
+
+```typescript
+import { Body, Controller, HttpCode, HttpStatus, Post } from '@nestjs/common';
+import { AuthnService } from './authn.service';
+
+@Controller('authn')
+export class AuthnController {
+  constructor(private authService: AuthnService) {}
+
+  @HttpCode(HttpStatus.OK)
+  @Post('login')
+  signIn(@Body() signInDto: Record<string, any>) {
+    return this.authService.signIn(signInDto.username, signInDto.password);
+  }
+}
+
+```
+
+A última etapa é configurar o módulo de autenticação
+```typescript
+// authn/authn.module.ts
+import { Module } from '@nestjs/common';
+import { AuthnService } from './authn.service';
+import { AuthnController } from './authn.controller';
+import { UsersService } from './users/users.service';
+import { jwtConstants } from './constants';
+import { JwtModule } from '@nestjs/jwt';
+
+@Module({
+  providers: [AuthnService, UsersService],
+  controllers: [AuthnController],
+  imports: [
+    JwtModule.register({
+      global: true,
+      secret: jwtConstants.secret,
+      signOptions: { expiresIn: jwtConstants.expiresIn },
+    }),
+  ],
+  exports: [AuthnService],
+})
+export class AuthnModule {}
+
+```
+
+```typescript
+// authn/constants.ts
+export const jwtConstants = {
+  secret: '123',
+  expiresIn: '300s',
+};
+
+```
+
+Outro ponto importante será ajustar o nosso middleware de autenticação para não interceptar a rota de login:
+```typescript
+// common/middlewares/auth.middleware.vneutral.ts
+// ...
+if (/^\/v[0-9]+/.test(req.path) || req.path.includes('login')) {
+  // ...
+}
+// ...
+```
+
+Agora basta importar nosso novo módulo:
+```typescript
+// app.module.ts
+// ...
+imports: [ImcCalculatorModule, AuthnModule]
+// ...
+```
+
+Teste o funcionamento tentando login com diferentes usuários
+```bash
+curl --location 'http://localhost:3000/authn/login' \
+--header 'Content-Type: application/json' \
+--data-raw '{"username": "resende", "password": "234@mudar"}'
+```
+
+## 7.1 Implementando autenticação via Guard
+
+Basta criar nosso guard e configurar seu uso em um controller para autenticar nossas rotas:
+
+```typescript
+// authn/authn.guard.ts
+import {
+  CanActivate,
+  ExecutionContext,
+  Injectable,
+  UnauthorizedException,
+} from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
+import { jwtConstants } from './constants';
+import { Request } from 'express';
+
+@Injectable()
+export class AuthnGuard implements CanActivate {
+  constructor(private jwtService: JwtService) {}
+
+  async canActivate(context: ExecutionContext): Promise<boolean> {
+    const request = context.switchToHttp().getRequest();
+    const token = this.extractTokenFromHeader(request);
+    if (!token) {
+      throw new UnauthorizedException();
+    }
+    try {
+      // 💡 We're assigning the payload to the request object here
+      // so that we can access it in our route handlers
+      request['user'] = await this.jwtService.verifyAsync(token, {
+        secret: jwtConstants.secret,
+      });
+    } catch {
+      throw new UnauthorizedException();
+    }
+    return true;
+  }
+
+  private extractTokenFromHeader(request: Request): string | undefined {
+    const [type, token] = request.headers.authorization?.split(' ') ?? [];
+    return type === 'Bearer' ? token : undefined;
+  }
+}
+
+```
+
+Configuração do controller (nova rota):
+```typescript
+// authn/authn.controller.ts
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Post,
+  Request,
+  UseGuards,
+} from '@nestjs/common';
+// ...
+import { AuthnGuard } from './authn.guard';
+// ...
+@UseGuards(AuthnGuard)
+@Get('profile')
+getProfile(@Request() req) {
+return req.user;
+}
+// ...
+```
+
+Por fim, podemos testar a chamada:
+```bash
+curl --location 'http://localhost:3000/authn/login' \
+--header 'Content-Type: application/json' \
+--data-raw '{"username": "resende", "password": "234@mudar"}'
+```
+
+```bash
+curl --location 'http://localhost:3000/authn/profile' \
+--header 'x-api-key: supersafevn' \
+--header 'Authorization: Bearer eyJ...'
+```

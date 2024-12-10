@@ -5,7 +5,7 @@ import { Request, Response, NextFunction } from 'express';
 export class AuthMiddlewareVNeutral implements NestMiddleware {
   use(req: Request, res: Response, next: NextFunction) {
     console.log('Validate authn neutral...');
-    if (/^\/v[0-9]+/.test(req.path)) {
+    if (/^\/v[0-9]+/.test(req.path) || req.path.includes('login')) {
       next();
     } else {
       if (req.headers['x-api-key'] === 'supersafevn') {
